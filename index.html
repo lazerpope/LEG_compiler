@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LEG Assembler Compiler</title>
+    <style>
+      :root {
+        --bg-0: #0f111a;
+        --bg-1: #151a24;
+        --bg-2: #1c2332;
+        --panel: #1b2130;
+        --panel-2: #20283a;
+        --text: #c8d0e0;
+        --muted: #7c879f;
+        --accent: #7bdff6;
+        --accent-2: #f29e74;
+        --border: #2a3246;
+        --glow: rgba(123, 223, 246, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas",
+          "Courier New", monospace;
+        background:
+          radial-gradient(1200px 600px at 20% -20%, #1d2840 0%, transparent 55%),
+          radial-gradient(900px 500px at 100% 0%, #19233a 0%, transparent 50%),
+          linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+        overflow: hidden;
+      }
+
+      .app {
+        height: 100%;
+        display: grid;
+        grid-template-rows: 32px 1fr;
+      }
+
+      .toolbar {
+        height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 18px 12px;
+        background: linear-gradient(180deg, #131824, #101520);
+        border-bottom: 1px solid var(--border);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      }
+
+      .toolbar .group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .toolbar .spacer {
+        flex: 1;
+      }
+
+      button {
+        height: 24px;
+        padding: 0 10px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: var(--panel-2);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        letter-spacing: 0.2px;
+        cursor: pointer;
+        transition: transform 120ms ease, border-color 120ms ease,
+          box-shadow 120ms ease, background 120ms ease;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--glow);
+        transform: translateY(-1px);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .primary {
+        background: linear-gradient(135deg, #21324a, #1a2b3f);
+        border-color: #33415b;
+      }
+
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .checkbox input {
+        accent-color: var(--accent);
+      }
+
+      .panes {
+        height: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 16px;
+        animation: fadeIn 420ms ease-out;
+      }
+
+      .pane {
+        background: linear-gradient(180deg, var(--panel), #171c28);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+      }
+
+      .pane header {
+        padding: 8px 12px;
+        background: linear-gradient(90deg, #1a2131, #192234);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--muted);
+      }
+
+      .pane header span {
+        color: var(--accent-2);
+      }
+
+      textarea {
+        width: 100%;
+        height: 100%;
+        resize: none;
+        border: 0;
+        outline: none;
+        padding: 14px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      textarea::selection {
+        background: rgba(123, 223, 246, 0.28);
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .panes {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="toolbar">
+        <div class="group">
+          <button id="open-editor">Open TXT</button>
+          <button id="download-editor">Download</button>
+          <button id="copy-editor">Copy</button>
+        </div>
+        <div class="spacer"></div>
+        <div class="group">
+          <button id="compile" class="primary">Compile</button>
+          <label class="checkbox">
+            <input id="auto-compile" type="checkbox" />
+            Auto
+          </label>
+        </div>
+        <div class="spacer"></div>
+        <div class="group">
+          <button id="download-result">Download</button>
+          <button id="copy-result">Copy</button>
+        </div>
+      </div>
+      <div class="panes">
+        <section class="pane">
+          <header>
+            Editor
+            <span id="editor-status">Idle</span>
+          </header>
+          <textarea id="editor" spellcheck="false"></textarea>
+        </section>
+        <section class="pane">
+          <header>
+            Result
+            <span id="result-status">Waiting</span>
+          </header>
+          <textarea id="result" spellcheck="false"></textarea>
+        </section>
+      </div>
+    </div>
+
+    <input id="file-input" type="file" accept=".txt" hidden />
+
+    <script>
+      const editor = document.getElementById("editor");
+      const result = document.getElementById("result");
+      const editorStatus = document.getElementById("editor-status");
+      const resultStatus = document.getElementById("result-status");
+      const fileInput = document.getElementById("file-input");
+      const autoCompile = document.getElementById("auto-compile");
+
+      const setStatus = (node, text) => {
+        node.textContent = text;
+      };
+
+      const compile = () => {
+        result.value = editor.value;
+        setStatus(resultStatus, "Compiled");
+      };
+
+      const downloadText = (text, filename) => {
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+      };
+
+      const copyText = async (text) => {
+        await navigator.clipboard.writeText(text);
+      };
+
+      document.getElementById("open-editor").addEventListener("click", () => {
+        fileInput.value = "";
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          editor.value = reader.result || "";
+          setStatus(editorStatus, "Loaded");
+          if (autoCompile.checked) compile();
+        };
+        reader.readAsText(file);
+      });
+
+      document.getElementById("download-editor").addEventListener("click", () => {
+        downloadText(editor.value, "editor.txt");
+      });
+
+      document.getElementById("copy-editor").addEventListener("click", async () => {
+        await copyText(editor.value);
+        setStatus(editorStatus, "Copied");
+      });
+
+      document.getElementById("compile").addEventListener("click", () => {
+        compile();
+      });
+
+      document.getElementById("download-result").addEventListener("click", () => {
+        downloadText(result.value, "result.txt");
+      });
+
+      document.getElementById("copy-result").addEventListener("click", async () => {
+        await copyText(result.value);
+        setStatus(resultStatus, "Copied");
+      });
+
+      editor.addEventListener("input", () => {
+        setStatus(editorStatus, "Editing");
+        if (autoCompile.checked) compile();
+      });
+    </script>
+  </body>
+</html>
