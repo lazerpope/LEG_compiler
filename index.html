@@ -38,6 +38,7 @@
           radial-gradient(900px 500px at 100% 0%, #19233a 0%, transparent 50%),
           linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
         overflow: hidden;
+        
       }
 
       .app {
@@ -145,6 +146,36 @@
         color: var(--accent-2);
       }
 
+      .code-wrap {
+        height: 100%;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        overflow: hidden;
+      }
+
+      .line-numbers {
+        padding: 14px 10px;
+        background: #151a24;
+        border-right: 1px solid var(--border);
+        color: var(--muted);
+        text-align: right;
+        user-select: none;
+      }
+      #editor-lines{
+        font-size: 14px;
+        line-height: normal;
+      }
+      #editor{
+        font-size: 14px;
+        line-height: normal;
+      }
+      
+      .line-numbers__inner {
+        white-space: pre;
+        line-height: 1.5;
+        font-size: 12px;
+      }
+
       textarea {
         width: 100%;
         height: 100%;
@@ -210,14 +241,24 @@
             Editor
             <span id="editor-status">Idle</span>
           </header>
-          <textarea id="editor" spellcheck="false"></textarea>
+          <div class="code-wrap">
+            <div class="line-numbers">
+              <div id="editor-lines" class="line-numbers__inner">1</div>
+            </div>
+            <textarea id="editor" spellcheck="false"></textarea>
+          </div>
         </section>
         <section class="pane">
           <header>
             Result
             <span id="result-status">Waiting</span>
           </header>
-          <textarea id="result" spellcheck="false"></textarea>
+          <div class="code-wrap">
+            <div class="line-numbers">
+              <div id="result-lines" class="line-numbers__inner">1</div>
+            </div>
+            <textarea id="result" spellcheck="false"></textarea>
+          </div>
         </section>
       </div>
     </div>
@@ -229,17 +270,339 @@
       const result = document.getElementById("result");
       const editorStatus = document.getElementById("editor-status");
       const resultStatus = document.getElementById("result-status");
+      const editorLines = document.getElementById("editor-lines");
+      const resultLines = document.getElementById("result-lines");
       const fileInput = document.getElementById("file-input");
       const autoCompile = document.getElementById("auto-compile");
+      const LS_KEY = "leg-compiler-editor";
+      const LS_AUTO_KEY = "leg-compiler-auto";
 
       const setStatus = (node, text) => {
         node.textContent = text;
       };
 
-      const compile = () => {
-        result.value = editor.value;
-        setStatus(resultStatus, "Compiled");
+      const debounce = (fn, delay) => {
+        let timerId = null;
+        return (...args) => {
+          if (timerId) clearTimeout(timerId);
+          timerId = setTimeout(() => fn(...args), delay);
+        };
       };
+
+      const updateLineNumbers = (textarea, gutter) => {
+        const count = textarea.value === "" ? 1 : textarea.value.split("\n").length;
+        let numbers = "";
+        for (let i = 1; i <= count; i += 1) {
+          numbers += `${i}\n`;
+        }
+        gutter.textContent = numbers.trimEnd();
+      };
+
+      const syncGutterScroll = (textarea, gutter) => {
+        gutter.style.transform = `translateY(-${textarea.scrollTop}px)`;
+      };
+
+      const saveEditorToLs = debounce(() => {
+        localStorage.setItem(LS_KEY, editor.value);
+      }, 50);
+
+      const saveAutoToLs = (checked) => {
+        localStorage.setItem(LS_AUTO_KEY, checked ? "1" : "0");
+      };
+
+      const loadEditorFromLs = () => {
+        const saved = localStorage.getItem(LS_KEY);
+        if (saved !== null) {
+          editor.value = saved;
+          setStatus(editorStatus, "Restored");
+          if (autoCompile.checked) compile();
+        }
+      };
+
+      const loadAutoFromLs = () => {
+        const saved = localStorage.getItem(LS_AUTO_KEY);
+        if (saved !== null) {
+          autoCompile.checked = saved === "1";
+        }
+      };
+
+      const compile = () => {
+        const raw = editor.value;
+        const nodes = parseProgram(raw);
+        const state = {
+          symbols: new Map(),
+          nextAddr: 16,
+        };
+        const compiled = formatNodes(nodes, 0, state);
+        result.value = compiled.lines.join("\n");
+        if (compiled.errors.length > 0) {
+          setStatus(resultStatus, `Error: ${compiled.errors[0]}`);
+          return;
+        }
+        setStatus(resultStatus, "Compiled");
+        updateLineNumbers(result, resultLines);
+      };
+
+      const parseProgram = (source) => {
+        const lines = source.replace(/\r\n/g, "\n").split("\n");
+        const { nodes } = parseSection(lines, 0, 0);
+        return nodes;
+      };
+
+      const parseSection = (lines, startIndex, baseIndent) => {
+        const nodes = [];
+        let i = startIndex;
+
+        while (i < lines.length) {
+          const line = lines[i];
+          const indent = getIndent(line);
+          const trimmed = line.trim();
+
+          if (indent < baseIndent) break;
+
+          if (trimmed === "") {
+            nodes.push({ type: "empty", line: i + 1 });
+            i += 1;
+            continue;
+          }
+
+          if (trimmed.startsWith("#")) {
+            nodes.push({ type: "comment", text: trimmed, line: i + 1 });
+            i += 1;
+            continue;
+          }
+
+          if (/\b(if|else)\b/.test(trimmed)) {
+            const blockIndent = indent + 1;
+            const parsed = parseSection(lines, i + 1, blockIndent);
+            nodes.push({
+              type: "block",
+              text: trimmed,
+              line: i + 1,
+              children: parsed.nodes,
+            });
+            i = parsed.nextIndex;
+            continue;
+          }
+
+          nodes.push({ type: "statement", text: trimmed, line: i + 1 });
+          i += 1;
+        }
+
+        return { nodes, nextIndex: i };
+      };
+
+      const getIndent = (line) => line.match(/^\s*/)[0].length;
+
+      const formatNodes = (nodes, depth, state) => {
+        const indent = "  ".repeat(depth);
+        const lines = [];
+        const errors = [];
+
+        for (const node of nodes) {
+          if (node.type === "empty") {
+            lines.push("");
+            continue;
+          }
+
+          if (node.type === "comment") {
+            lines.push(`${indent}${node.text}`);
+            continue;
+          }
+
+          if (node.type === "statement") {
+            const formatted = formatStatement(node.text, indent, state, node.line);
+            lines.push(...formatted.lines);
+            errors.push(...formatted.errors);
+            continue;
+          }
+
+          if (node.type === "block") {
+            lines.push(`${indent}BLOCK ${node.text}`);
+            const nested = formatNodes(node.children, depth + 1, state);
+            lines.push(...nested.lines);
+            errors.push(...nested.errors);
+          }
+        }
+
+        return { lines, errors };
+      };
+
+      const formatStatement = (text, indent, state, lineNo) => {
+        const lines = [];
+        const errors = [];
+        const addError = (message) => {
+          const errorText = `Line ${lineNo}: ${message}`;
+          errors.push(errorText);
+          lines.push(`${indent}ERROR ${message}`);
+        };
+        const SPECIAL_ADDR = new Set(["7", "8", "9", "10"]);
+        const SPECIAL_SYMBOLS = new Set(["io", "kb", "timer", "fstack"]);
+        const isImmediateNumber = (value) =>
+          /^\d+$/.test(value) && !SPECIAL_ADDR.has(value);
+        const isRegister = (value) => /^r[1-6]$/i.test(value);
+        const isKnownSymbol = (name) =>
+          state.symbols.has(name) || isRegister(name) || SPECIAL_SYMBOLS.has(name);
+        const emitMov = (source, target) => {
+          const op = isImmediateNumber(source) ? "i1+mov" : "mov";
+          return `${indent}${op} ${source} _ ${target}`;
+        };
+        const tokenPattern = "([A-Za-z_]\\w*|\\d+)";
+        const binaryRe = new RegExp(
+          `^${tokenPattern}\\s*(<<|>>|\\/\\/|\\+|\\-|\\*|%|\\band\\b|\\bor\\b|\\bxor\\b)\\s*${tokenPattern}$`,
+          "i"
+        );
+        const unaryRe = new RegExp(`^!\\s*${tokenPattern}$`);
+        const opMap = {
+          "+": "add",
+          "-": "sub",
+          and: "and",
+          or: "or",
+          xor: "xor",
+          "<<": "shl",
+          ">>": "shr",
+          "*": "mul",
+          "//": "div",
+          "%": "mod",
+        };
+
+        const letMatch = text.match(/^let\s+([A-Za-z_]\w*)\s*=\s*(\d+)\s*$/);
+        if (letMatch) {
+          const name = letMatch[1];
+          const value = letMatch[2];
+          if (SPECIAL_SYMBOLS.has(name)) {
+            addError(`invalid_declare ${name}`);
+            return { lines, errors };
+          }
+          let addr = state.symbols.get(name);
+          if (addr === undefined) {
+            addr = state.nextAddr;
+            state.symbols.set(name, addr);
+            state.nextAddr += 1;
+          }
+          lines.push(`${indent}const ${name} ${addr}`, emitMov(value, name));
+          return { lines, errors };
+        }
+
+        const assignLiteralMatch = text.match(
+          /^([A-Za-z_]\w*)\s*=\s*(\d+)\s*$/
+        );
+        if (assignLiteralMatch) {
+          const name = assignLiteralMatch[1];
+          const value = assignLiteralMatch[2];
+          if (SPECIAL_SYMBOLS.has(name) && name !== "io") {
+            addError(`readonly_target ${name}`);
+            return { lines, errors };
+          }
+          if (!isKnownSymbol(name)) {
+            addError(`undeclared ${name}`);
+            return { lines, errors };
+          }
+          lines.push(emitMov(value, name));
+          return { lines, errors };
+        }
+
+        const assignVarMatch = text.match(
+          /^([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\s*$/
+        );
+        if (assignVarMatch) {
+          const target = assignVarMatch[1];
+          const source = assignVarMatch[2];
+          if (SPECIAL_SYMBOLS.has(target) && target !== "io") {
+            addError(`readonly_target ${target}`);
+            return { lines, errors };
+          }
+          if (!isKnownSymbol(target)) {
+            addError(`undeclared ${target}`);
+            return { lines, errors };
+          }
+          if (!isKnownSymbol(source)) {
+            addError(`undeclared ${source}`);
+            return { lines, errors };
+          }
+          if (target === "io") {
+            lines.push(emitMov(source, target));
+            return { lines, errors };
+          }
+          const reg = "r1";
+          lines.push(emitMov(source, reg), emitMov(reg, target));
+          return { lines, errors };
+        }
+
+        const assignMatch = text.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
+        if (assignMatch) {
+          const target = assignMatch[1];
+          const rhs = assignMatch[2].trim();
+          if (!isKnownSymbol(target)) {
+            addError(`undeclared ${target}`);
+            return { lines, errors };
+          }
+
+          const unaryMatch = rhs.match(unaryRe);
+          if (unaryMatch) {
+            const value = unaryMatch[1];
+            if (!/^\d+$/.test(value) && !isKnownSymbol(value)) {
+              addError(`undeclared ${value}`);
+              return { lines, errors };
+            }
+            if (SPECIAL_SYMBOLS.has(target) && target !== "io") {
+              addError(`readonly_target ${target}`);
+              return { lines, errors };
+            }
+            if (target === "io") {
+              addError("invalid_target io");
+              return { lines, errors };
+            }
+            lines.push(
+              emitMov(value, "r1"),
+              `${indent}not r1 r2`,
+              `${indent}mov r2 _ ${target}`
+            );
+            return { lines, errors };
+          }
+
+          const binaryMatch = rhs.match(binaryRe);
+          if (binaryMatch) {
+            const left = binaryMatch[1];
+            const opToken = binaryMatch[2].toLowerCase();
+            const right = binaryMatch[3];
+            const opMnemonic = opMap[opToken];
+            if (!opMnemonic) {
+              addError(`unknown_op ${opToken}`);
+              return { lines, errors };
+            }
+            if (!/^\d+$/.test(left) && !isKnownSymbol(left)) {
+              addError(`undeclared ${left}`);
+              return { lines, errors };
+            }
+            if (!/^\d+$/.test(right) && !isKnownSymbol(right)) {
+              addError(`undeclared ${right}`);
+              return { lines, errors };
+            }
+            if (SPECIAL_SYMBOLS.has(target) && target !== "io") {
+              addError(`readonly_target ${target}`);
+              return { lines, errors };
+            }
+            if (target === "io") {
+              addError("invalid_target io");
+              return { lines, errors };
+            }
+            lines.push(
+              emitMov(left, "r1"),
+              emitMov(right, "r2"),
+              `${indent}${opMnemonic} r1 r2 r3`,
+              `${indent}mov r3 _ ${target}`
+            );
+            return { lines, errors };
+          }
+        }
+
+        lines.push(`${indent}STATEMENT ${text}`);
+        return { lines, errors };
+      };
+
+
+
 
       const downloadText = (text, filename) => {
         const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
@@ -268,6 +631,7 @@
         reader.onload = () => {
           editor.value = reader.result || "";
           setStatus(editorStatus, "Loaded");
+          updateLineNumbers(editor, editorLines);
           if (autoCompile.checked) compile();
         };
         reader.readAsText(file);
@@ -286,6 +650,11 @@
         compile();
       });
 
+      autoCompile.addEventListener("change", () => {
+        saveAutoToLs(autoCompile.checked);
+        if (autoCompile.checked) compile();
+      });
+
       document.getElementById("download-result").addEventListener("click", () => {
         downloadText(result.value, "result.txt");
       });
@@ -297,8 +666,27 @@
 
       editor.addEventListener("input", () => {
         setStatus(editorStatus, "Editing");
+        saveEditorToLs();
+        updateLineNumbers(editor, editorLines);
         if (autoCompile.checked) compile();
       });
+
+      result.addEventListener("input", () => {
+        updateLineNumbers(result, resultLines);
+      });
+
+      editor.addEventListener("scroll", () => {
+        syncGutterScroll(editor, editorLines);
+      });
+
+      result.addEventListener("scroll", () => {
+        syncGutterScroll(result, resultLines);
+      });
+
+      loadAutoFromLs();
+      loadEditorFromLs();
+      updateLineNumbers(editor, editorLines);
+      updateLineNumbers(result, resultLines);
     </script>
   </body>
 </html>
