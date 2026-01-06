@@ -327,7 +327,7 @@
       };
 
       const compile = () => {
-        const raw = editor.value;
+        const raw = preprocess(editor.value);
         const nodes = parseProgram(raw);
         const state = {
           symbols: new Map(),
@@ -347,6 +347,19 @@
         const lines = source.replace(/\r\n/g, "\n").split("\n");
         const { nodes } = parseSection(lines, 0, 0);
         return nodes;
+      };
+
+      // --------------
+      // PREPROCESSOR
+      // --------------
+      const preprocess = (source) => {
+        const lines = source.replace(/\r\n/g, "\n").split("\n");
+        const processed = lines.map((line) =>
+          line
+            .replace(/\s+true\b/g, "1")
+            .replace(/\s+false\b/g, "0")
+        );
+        return processed.join("\n");
       };
 
       const parseSection = (lines, startIndex, baseIndent) => {
