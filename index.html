@@ -358,6 +358,10 @@
           line
             .replace(/\s+true\b/g, "1")
             .replace(/\s+false\b/g, "0")
+            .replace(/read_io\(\)/g, "io")
+            .replace(/read_kb\(\)/g, "kb")
+            .replace(/read_timer\(\)/g, "timer")
+            .replace(/write_io\(([^)]+)\)/g, "io = $1")
         );
         return processed.join("\n");
       };
