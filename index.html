@@ -1,22 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en">  
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LEG Assembler Compiler</title>
     <style>
       :root {
-        --bg-0: #0f111a;
-        --bg-1: #151a24;
-        --bg-2: #1c2332;
-        --panel: #1b2130;
-        --panel-2: #20283a;
-        --text: #c8d0e0;
-        --muted: #7c879f;
-        --accent: #7bdff6;
-        --accent-2: #f29e74;
-        --border: #2a3246;
-        --glow: rgba(123, 223, 246, 0.18);
+        --bg-0: #23262e;
+        --bg-1: #1a1c22;
+        --bg-2: #2b303b;
+        --panel: #23262e;
+        --panel-2: #2b303b;
+        --text: #d5ced9;
+        --muted: #746f77;
+        --accent: #00e8c6;
+        --accent-2: #f39c12;
+        --border: #363c49;
+        --glow: rgba(0, 232, 198, 0.2);
       }
 
       * {
@@ -34,8 +34,8 @@
         font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas",
           "Courier New", monospace;
         background:
-          radial-gradient(1200px 600px at 20% -20%, #1d2840 0%, transparent 55%),
-          radial-gradient(900px 500px at 100% 0%, #19233a 0%, transparent 50%),
+          radial-gradient(900px 500px at 20% -20%, #2d313b 0%, transparent 60%),
+          radial-gradient(900px 500px at 100% 0%, #20232a 0%, transparent 55%),
           linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
         overflow: hidden;
         
@@ -53,7 +53,7 @@
         align-items: center;
         gap: 8px;
         padding: 18px 12px;
-        background: linear-gradient(180deg, #131824, #101520);
+        background: linear-gradient(180deg, #23262e, #20232a);
         border-bottom: 1px solid var(--border);
         box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
       }
@@ -94,8 +94,9 @@
       }
 
       .primary {
-        background: linear-gradient(135deg, #21324a, #1a2b3f);
-        border-color: #33415b;
+        background: linear-gradient(135deg, #00e8c5cc, #07d4b6cc);
+        border-color: #00e8c5cc;
+        color: #20232b;
       }
 
       .checkbox {
@@ -120,7 +121,7 @@
       }
 
       .pane {
-        background: linear-gradient(180deg, var(--panel), #171c28);
+        background: linear-gradient(180deg, var(--panel), #1a1c22);
         border: 1px solid var(--border);
         border-radius: 10px;
         display: grid;
@@ -131,7 +132,7 @@
 
       .pane header {
         padding: 8px 12px;
-        background: linear-gradient(90deg, #1a2131, #192234);
+        background: linear-gradient(90deg, #23262e, #20232a);
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
@@ -143,7 +144,7 @@
       }
 
       .pane header span {
-        color: var(--accent-2);
+        color: var(--accent);
       }
 
       .code-wrap {
@@ -153,24 +154,19 @@
         overflow: hidden;
       }
 
-      .line-numbers {
+      .code-wrap--single {
+        grid-template-columns: 1fr;
+      }
+
+      .text-gutter {
         padding: 14px 10px;
-        background: #151a24;
+        background: #23262e;
         border-right: 1px solid var(--border);
         color: var(--muted);
         text-align: right;
         user-select: none;
       }
-      #editor-lines{
-        font-size: 14px;
-        line-height: normal;
-      }
-      #editor{
-        font-size: 14px;
-        line-height: normal;
-      }
-      
-      .line-numbers__inner {
+      .text-gutter__inner {
         white-space: pre;
         line-height: 1.5;
         font-size: 12px;
@@ -194,6 +190,11 @@
         background: rgba(123, 223, 246, 0.28);
       }
 
+      .monaco-host {
+        width: 100%;
+        height: calc(95vh - 68px);
+      }
+
       @keyframes fadeIn {
         from {
           opacity: 0;
@@ -214,6 +215,9 @@
     </style>
   </head>
   <body>
+
+
+
     <div class="app">
       <div class="toolbar">
         <div class="group">
@@ -241,11 +245,8 @@
             Editor
             <span id="editor-status">Idle</span>
           </header>
-          <div class="code-wrap">
-            <div class="line-numbers">
-              <div id="editor-lines" class="line-numbers__inner">1</div>
-            </div>
-            <textarea id="editor" spellcheck="false"></textarea>
+          <div class="code-wrap code-wrap--single">
+            <div id="editor" class="monaco-host"></div>
           </div>
         </section>
         <section class="pane">
@@ -254,8 +255,8 @@
             <span id="result-status">Waiting</span>
           </header>
           <div class="code-wrap">
-            <div class="line-numbers">
-              <div id="result-lines" class="line-numbers__inner">1</div>
+            <div class="text-gutter">
+              <div id="result-lines" class="text-gutter__inner">1</div>
             </div>
             <textarea id="result" spellcheck="false"></textarea>
           </div>
@@ -265,17 +266,19 @@
 
     <input id="file-input" type="file" accept=".txt" hidden />
 
+    <script src="https://unpkg.com/monaco-editor/min/vs/loader.js"></script>
+
     <script>
-      const editor = document.getElementById("editor");
+      const editorEl = document.getElementById("editor");
       const result = document.getElementById("result");
       const editorStatus = document.getElementById("editor-status");
       const resultStatus = document.getElementById("result-status");
-      const editorLines = document.getElementById("editor-lines");
       const resultLines = document.getElementById("result-lines");
       const fileInput = document.getElementById("file-input");
       const autoCompile = document.getElementById("auto-compile");
       const LS_KEY = "leg-compiler-editor";
       const LS_AUTO_KEY = "leg-compiler-auto";
+      let editor = null;
 
       const setStatus = (node, text) => {
         node.textContent = text;
@@ -287,6 +290,176 @@
           if (timerId) clearTimeout(timerId);
           timerId = setTimeout(() => fn(...args), delay);
         };
+      };
+
+      const getEditorValue = () => (editor ? editor.getValue() : "");
+
+      const setEditorValue = (value) => {
+        if (!editor) return;
+        editor.setValue(value);
+      };
+
+      const initEditor = (initialValue) => {
+        if (!window.require) {
+          setStatus(editorStatus, "Editor load failed");
+          return;
+        }
+        window.require.config({
+          paths: { vs: "https://unpkg.com/monaco-editor/min/vs" },
+        });
+        window.require(["vs/editor/editor.main"], () => {
+          monaco.languages.register({ id: "legScript" });
+          monaco.languages.setMonarchTokensProvider("legScript", {
+            keywords: ["let", "if", "else", "true", "false"],
+            operators: ["and", "or", "xor"],
+            ioFuncs: ["read_io", "read_kb", "read_timer", "write_io"],
+            tokenizer: {
+              root: [
+                [/#.*$/, "comment"],
+                [
+                  /\b(?:read_io|read_kb|read_timer|write_io)\b/,
+                  "function",
+                ],
+                [/\b(?:let|if|else|true|false)\b/, "keyword"],
+                [/\b(?:and|or|xor)\b/, "operator"],
+                [/(<<|>>|\/\/|==|=|\+|\-|\*|%)/, "operator"],
+                [/\b[0-9]+\b/, "number"],
+                [/[A-Za-z_]\w*/, "identifier"],
+              ],
+            },
+          });
+          monaco.languages.setLanguageConfiguration("legScript", {
+            comments: {
+              lineComment: "#",
+            },
+          });
+          monaco.languages.registerHoverProvider("legScript", {
+            provideHover: (model, position) => {
+              const word = model.getWordAtPosition(position);
+              if (!word) return null;
+              const functionSigs = new Map([
+                    ["read_io", "built-in function read_io()"],
+                ["read_kb", "built-in function read_kb()"],
+                ["read_timer", "built-in function read_timer()"],
+                ["write_io", "built-in function write_io(value)"],
+              ]);
+              const builtinVars = new Set(["io", "kb", "timer", "fstack"]);
+
+              if (functionSigs.has(word.word)) {
+                return {
+                  range: new monaco.Range(
+                    position.lineNumber,
+                    word.startColumn,
+                    position.lineNumber,
+                    word.endColumn
+                  ),
+                  contents: [
+                    {
+                      value: [
+                        "```legScript",
+                        functionSigs.get(word.word),
+                        "```",
+                      ].join("\n"),
+                    },
+                  ],
+                };
+              }
+
+              const text = model.getValue();
+              const declared = new Set();
+              const lines = text.split(/\r?\n/);
+              for (const line of lines) {
+                const match = line.match(/^\s*let\s+([A-Za-z_]\w*)\s*=/);
+                if (match) declared.add(match[1]);
+              }
+              if (declared.has(word.word) || builtinVars.has(word.word)) {
+                return {
+                  range: new monaco.Range(
+                    position.lineNumber,
+                    word.startColumn,
+                    position.lineNumber,
+                    word.endColumn
+                  ),
+                  contents: [
+                    {
+                      value: [
+                        "```legScript",
+                        `let ${word.word}: number`,
+                        "```",
+                      ].join("\n"),
+                    },
+                  ],
+                };
+              }
+
+              return null;
+            },
+          });
+          monaco.editor.defineTheme("leg-dark", {
+            base: "vs-dark",
+            inherit: true,
+            rules: [
+              { token: "comment", foreground: "A0A1A7" },
+              { token: "keyword", foreground: "C74DED" },
+              { token: "operator", foreground: "EE5D43" },
+              { token: "function", foreground: "FFE66D" },
+              { token: "number", foreground: "F39C12" },
+              { token: "identifier", foreground: "00E8C6" },
+            ],
+            colors: {
+              "editor.background": "#23262e",
+              "editor.foreground": "#d5ced9",
+              "editorLineNumber.foreground": "#746f77",
+              "editorLineNumber.activeForeground": "#d5ced9",
+              "editorCursor.foreground": "#ffffff",
+              "editor.selectionBackground": "#3d4352",
+              "editor.selectionHighlightBackground": "#4f4355",
+              "editor.wordHighlightBackground": "#4f4355",
+              "editor.wordHighlightStrongBackground": "#db45a2",
+              "editor.findMatchBackground": "#f39d12",
+              "editor.findMatchHighlightBackground": "#59b8b3",
+              "editor.findMatchBorder": "#f39d12",
+              "editor.hoverHighlightBackground": "#373941",
+              "editor.lineHighlightBackground": "#2e323d",
+              "editor.lineHighlightBorder": "#2e323d",
+              "editorLink.activeForeground": "#3b79c7",
+              "editor.rangeHighlightBackground": "#372f3c",
+              "editorWhitespace.foreground": "#333844",
+              "editorIndentGuide.background": "#333844",
+              "editorIndentGuide.activeBackground": "#585c66",
+              "editorRuler.foreground": "#4f4355",
+              "editorCodeLens.foreground": "#746f77",
+              "editorBracketMatch.background": "#746f77",
+              "editorBracketMatch.border": "#746f77",
+              "editorOverviewRuler.border": "#1b1d23",
+              "editorError.foreground": "#fc644d",
+              "editorWarning.foreground": "#ff9f2e",
+              "editorGutter.background": "#23262e",
+              "editorGutter.modifiedBackground": "#5bc0eb",
+              "editorGutter.addedBackground": "#9bc53d",
+              "editorGutter.deletedBackground": "#fc644d",
+            },
+          });
+          editor = monaco.editor.create(editorEl, {
+            value: initialValue || "",
+            // language: "javascript",
+            language: "legScript",
+            theme: "leg-dark",
+            minimap: { enabled: false },
+            automaticLayout: true,
+          });
+
+          editor.onDidChangeModelContent(() => {
+            setStatus(editorStatus, "Editing");
+            saveEditorToLs();
+            if (autoCompile.checked) compile();
+          });
+
+          if (initialValue) {
+            setStatus(editorStatus, "Restored");
+            if (autoCompile.checked) compile();
+          }
+        });
       };
 
       const updateLineNumbers = (textarea, gutter) => {
@@ -303,7 +476,7 @@
       };
 
       const saveEditorToLs = debounce(() => {
-        localStorage.setItem(LS_KEY, editor.value);
+        localStorage.setItem(LS_KEY, getEditorValue());
       }, 50);
 
       const saveAutoToLs = (checked) => {
@@ -313,10 +486,9 @@
       const loadEditorFromLs = () => {
         const saved = localStorage.getItem(LS_KEY);
         if (saved !== null) {
-          editor.value = saved;
-          setStatus(editorStatus, "Restored");
-          if (autoCompile.checked) compile();
+          return saved;
         }
+        return "";
       };
 
       const loadAutoFromLs = () => {
@@ -327,7 +499,7 @@
       };
 
       const compile = () => {
-        const raw = preprocess(editor.value);
+        const raw = preprocess(getEditorValue());
         const nodes = parseProgram(raw);
         const state = {
           symbols: new Map(),
@@ -870,20 +1042,19 @@
         if (!file) return;
         const reader = new FileReader();
         reader.onload = () => {
-          editor.value = reader.result || "";
+          setEditorValue(reader.result || "");
           setStatus(editorStatus, "Loaded");
-          updateLineNumbers(editor, editorLines);
           if (autoCompile.checked) compile();
         };
         reader.readAsText(file);
       });
 
       document.getElementById("download-editor").addEventListener("click", () => {
-        downloadText(editor.value, "editor.txt");
+        downloadText(getEditorValue(), "editor.txt");
       });
 
       document.getElementById("copy-editor").addEventListener("click", async () => {
-        await copyText(editor.value);
+        await copyText(getEditorValue());
         setStatus(editorStatus, "Copied");
       });
 
@@ -905,19 +1076,8 @@
         setStatus(resultStatus, "Copied");
       });
 
-      editor.addEventListener("input", () => {
-        setStatus(editorStatus, "Editing");
-        saveEditorToLs();
-        updateLineNumbers(editor, editorLines);
-        if (autoCompile.checked) compile();
-      });
-
       result.addEventListener("input", () => {
         updateLineNumbers(result, resultLines);
-      });
-
-      editor.addEventListener("scroll", () => {
-        syncGutterScroll(editor, editorLines);
       });
 
       result.addEventListener("scroll", () => {
@@ -925,9 +1085,19 @@
       });
 
       loadAutoFromLs();
-      loadEditorFromLs();
-      updateLineNumbers(editor, editorLines);
+      initEditor(loadEditorFromLs());
       updateLineNumbers(result, resultLines);
     </script>
+
+
+
+
+
+<!-- EXTERNAL -->
+
+
+
+
+
   </body>
 </html>
