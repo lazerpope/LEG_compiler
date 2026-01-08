@@ -147,7 +147,7 @@
       }
 
       .code-wrap {
-        height: 100%;
+        height:  calc(95vh - 68px);
         display: grid;
         grid-template-columns: auto 1fr;
         overflow: hidden;
@@ -178,7 +178,7 @@
 
       textarea {
         width: 100%;
-        height: 100%;
+        height:  calc(95vh - 68px);
         resize: none;
         border: 0;
         outline: none;
@@ -464,12 +464,6 @@
           const op = isImmediateNumber(source) ? "i1+mov" : "mov";
           return `${indent}${op} ${source} _ ${target}`;
         };
-        const tokenPattern = "([A-Za-z_]\\w*|\\d+)";
-        const binaryRe = new RegExp(
-          `^${tokenPattern}\\s*(<<|>>|\\/\\/|\\+|\\-|\\*|%|\\band\\b|\\bor\\b|\\bxor\\b)\\s*${tokenPattern}$`,
-          "i"
-        );
-        const unaryRe = new RegExp(`^!\\s*${tokenPattern}$`);
         const opMap = {
           "+": "add",
           "-": "sub",
@@ -481,6 +475,271 @@
           "*": "mul",
           "//": "div",
           "%": "mod",
+        };
+        const tokenizeExpression = (text) => {
+          const tokens = [];
+          let i = 0;
+          while (i < text.length) {
+            const ch = text[i];
+            if (/\s/.test(ch)) {
+              i += 1;
+              continue;
+            }
+            if (ch === "(" || ch === ")") {
+              tokens.push({ type: "paren", value: ch });
+              i += 1;
+              continue;
+            }
+            if (ch === "!" || ch === "+" || ch === "-" || ch === "*" || ch === "%") {
+              tokens.push({ type: "op", value: ch });
+              i += 1;
+              continue;
+            }
+            if (ch === "<" || ch === ">") {
+              if (text[i + 1] === ch) {
+                tokens.push({ type: "op", value: ch + ch });
+                i += 2;
+                continue;
+              }
+              throw new Error(`invalid_token ${ch}`);
+            }
+            if (ch === "/") {
+              if (text[i + 1] === "/") {
+                tokens.push({ type: "op", value: "//" });
+                i += 2;
+                continue;
+              }
+              throw new Error("invalid_token /");
+            }
+            if (/[A-Za-z_]/.test(ch)) {
+              let j = i + 1;
+              while (j < text.length && /\w/.test(text[j])) {
+                j += 1;
+              }
+              const word = text.slice(i, j);
+              if (word === "and" || word === "or" || word === "xor") {
+                tokens.push({ type: "op", value: word });
+              } else {
+                tokens.push({ type: "id", value: word });
+              }
+              i = j;
+              continue;
+            }
+            if (/\d/.test(ch)) {
+              let j = i + 1;
+              while (j < text.length && /\d/.test(text[j])) {
+                j += 1;
+              }
+              tokens.push({ type: "number", value: text.slice(i, j) });
+              i = j;
+              continue;
+            }
+            throw new Error(`invalid_token ${ch}`);
+          }
+          return tokens;
+        };
+        const parseExpression = (text) => {
+          const tokens = tokenizeExpression(text);
+          let index = 0;
+
+          const peek = () => tokens[index];
+          const consume = () => tokens[index++];
+          const expect = (type, value) => {
+            const token = consume();
+            if (!token || token.type !== type || token.value !== value) {
+              throw new Error(`expected ${value || type}`);
+            }
+            return token;
+          };
+
+          const parsePrimary = () => {
+            const token = peek();
+            if (!token) throw new Error("unexpected_end");
+            if (token.type === "number") {
+              consume();
+              return { type: "number", value: token.value };
+            }
+            if (token.type === "id") {
+              consume();
+              return { type: "id", name: token.value };
+            }
+            if (token.type === "paren" && token.value === "(") {
+              consume();
+              const expr = parseOr();
+              expect("paren", ")");
+              return expr;
+            }
+            throw new Error(`unexpected_token ${token.value}`);
+          };
+
+          const parseUnary = () => {
+            const token = peek();
+            if (token && token.type === "op" && token.value === "!") {
+              consume();
+              return { type: "unary", op: "!", expr: parseUnary() };
+            }
+            return parsePrimary();
+          };
+
+          const parseMul = () => {
+            let node = parseUnary();
+            while (true) {
+              const token = peek();
+              if (!token || token.type !== "op") break;
+              if (token.value === "*" || token.value === "//" || token.value === "%") {
+                consume();
+                node = { type: "binary", op: token.value, left: node, right: parseUnary() };
+                continue;
+              }
+              break;
+            }
+            return node;
+          };
+
+          const parseAdd = () => {
+            let node = parseMul();
+            while (true) {
+              const token = peek();
+              if (!token || token.type !== "op") break;
+              if (token.value === "+" || token.value === "-") {
+                consume();
+                node = { type: "binary", op: token.value, left: node, right: parseMul() };
+                continue;
+              }
+              break;
+            }
+            return node;
+          };
+
+          const parseShift = () => {
+            let node = parseAdd();
+            while (true) {
+              const token = peek();
+              if (!token || token.type !== "op") break;
+              if (token.value === "<<" || token.value === ">>") {
+                consume();
+                node = { type: "binary", op: token.value, left: node, right: parseAdd() };
+                continue;
+              }
+              break;
+            }
+            return node;
+          };
+
+          const parseAnd = () => {
+            let node = parseShift();
+            while (true) {
+              const token = peek();
+              if (!token || token.type !== "op") break;
+              if (token.value === "and") {
+                consume();
+                node = { type: "binary", op: "and", left: node, right: parseShift() };
+                continue;
+              }
+              break;
+            }
+            return node;
+          };
+
+          const parseXor = () => {
+            let node = parseAnd();
+            while (true) {
+              const token = peek();
+              if (!token || token.type !== "op") break;
+              if (token.value === "xor") {
+                consume();
+                node = { type: "binary", op: "xor", left: node, right: parseAnd() };
+                continue;
+              }
+              break;
+            }
+            return node;
+          };
+
+          const parseOr = () => {
+            let node = parseXor();
+            while (true) {
+              const token = peek();
+              if (!token || token.type !== "op") break;
+              if (token.value === "or") {
+                consume();
+                node = { type: "binary", op: "or", left: node, right: parseXor() };
+                continue;
+              }
+              break;
+            }
+            return node;
+          };
+
+          const ast = parseOr();
+          if (index < tokens.length) {
+            throw new Error(`unexpected_token ${tokens[index].value}`);
+          }
+          return ast;
+        };
+        const compileExpression = (node, regPool) => {
+          const exprLines = [];
+          const exprErrors = [];
+          const allocReg = () => {
+            const reg = regPool.pop();
+            if (!reg) {
+              exprErrors.push("register_overflow");
+              return null;
+            }
+            return reg;
+          };
+          const releaseReg = (reg) => {
+            if (reg) regPool.push(reg);
+          };
+
+          const compileNode = (expr) => {
+            if (expr.type === "number") {
+              const reg = allocReg();
+              if (!reg) return { reg: null };
+              exprLines.push(emitMov(expr.value, reg));
+              return { reg };
+            }
+            if (expr.type === "id") {
+              if (!isKnownSymbol(expr.name)) {
+                exprErrors.push(`undeclared ${expr.name}`);
+                return { reg: null };
+              }
+              const reg = allocReg();
+              if (!reg) return { reg: null };
+              exprLines.push(emitMov(expr.name, reg));
+              return { reg };
+            }
+            if (expr.type === "unary") {
+              const inner = compileNode(expr.expr);
+              if (!inner.reg) return { reg: null };
+              const out = allocReg();
+              if (!out) return { reg: null };
+              exprLines.push(`${indent}not ${inner.reg} ${out}`);
+              releaseReg(inner.reg);
+              return { reg: out };
+            }
+            if (expr.type === "binary") {
+              const left = compileNode(expr.left);
+              const right = compileNode(expr.right);
+              if (!left.reg || !right.reg) return { reg: null };
+              const opMnemonic = opMap[expr.op];
+              if (!opMnemonic) {
+                exprErrors.push(`unknown_op ${expr.op}`);
+                return { reg: null };
+              }
+              const out = allocReg();
+              if (!out) return { reg: null };
+              exprLines.push(`${indent}${opMnemonic} ${left.reg} ${right.reg} ${out}`);
+              releaseReg(left.reg);
+              releaseReg(right.reg);
+              return { reg: out };
+            }
+            exprErrors.push("invalid_expression");
+            return { reg: null };
+          };
+
+          const compiled = compileNode(node);
+          return { lines: exprLines, errors: exprErrors, reg: compiled.reg };
         };
 
         const letMatch = text.match(/^let\s+([A-Za-z_]\w*)\s*=\s*(\d+)\s*$/);
@@ -554,64 +813,29 @@
             addError(`undeclared ${target}`);
             return { lines, errors };
           }
-
-          const unaryMatch = rhs.match(unaryRe);
-          if (unaryMatch) {
-            const value = unaryMatch[1];
-            if (!/^\d+$/.test(value) && !isKnownSymbol(value)) {
-              addError(`undeclared ${value}`);
-              return { lines, errors };
-            }
-            if (SPECIAL_SYMBOLS.has(target) && target !== "io") {
-              addError(`readonly_target ${target}`);
-              return { lines, errors };
-            }
-            if (target === "io") {
-              addError("invalid_target io");
-              return { lines, errors };
-            }
-            lines.push(
-              emitMov(value, "r1"),
-              `${indent}not r1 r2`,
-              `${indent}mov r2 _ ${target}`
-            );
+          if (SPECIAL_SYMBOLS.has(target) && target !== "io") {
+            addError(`readonly_target ${target}`);
             return { lines, errors };
           }
-
-          const binaryMatch = rhs.match(binaryRe);
-          if (binaryMatch) {
-            const left = binaryMatch[1];
-            const opToken = binaryMatch[2].toLowerCase();
-            const right = binaryMatch[3];
-            const opMnemonic = opMap[opToken];
-            if (!opMnemonic) {
-              addError(`unknown_op ${opToken}`);
-              return { lines, errors };
-            }
-            if (!/^\d+$/.test(left) && !isKnownSymbol(left)) {
-              addError(`undeclared ${left}`);
-              return { lines, errors };
-            }
-            if (!/^\d+$/.test(right) && !isKnownSymbol(right)) {
-              addError(`undeclared ${right}`);
-              return { lines, errors };
-            }
-            if (SPECIAL_SYMBOLS.has(target) && target !== "io") {
-              addError(`readonly_target ${target}`);
-              return { lines, errors };
-            }
-            if (target === "io") {
-              addError("invalid_target io");
-              return { lines, errors };
-            }
-            lines.push(
-              emitMov(left, "r1"),
-              emitMov(right, "r2"),
-              `${indent}${opMnemonic} r1 r2 r3`,
-              `${indent}mov r3 _ ${target}`
-            );
+          let exprAst;
+          try {
+            exprAst = parseExpression(rhs);
+          } catch (err) {
+            addError(`invalid_expression ${err.message}`);
             return { lines, errors };
           }
+          const regPool = ["r6", "r5", "r4", "r3", "r2", "r1"];
+          const compiled = compileExpression(exprAst, regPool);
+          if (compiled.errors.length > 0) {
+            compiled.errors.forEach((message) => addError(message));
+            return { lines, errors };
+          }
+          if (!compiled.reg) {
+            addError("invalid_expression");
+            return { lines, errors };
+          }
+          lines.push(...compiled.lines, emitMov(compiled.reg, target));
+          return { lines, errors };
         }
 
         lines.push(`${indent}STATEMENT ${text}`);
