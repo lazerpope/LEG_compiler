@@ -312,12 +312,12 @@
           monaco.languages.setMonarchTokensProvider("legScript", {
             keywords: ["let", "if", "else", "true", "false"],
             operators: ["and", "or", "xor"],
-            ioFuncs: ["read_io", "read_kb", "read_timer", "write_io"],
+            ioFuncs: ["readInput", "readKb", "readTimer", "writeOut"],
             tokenizer: {
               root: [
-                [/#.*$/, "comment"],
+                [/\/\/.*$/, "comment"],
                 [
-                  /\b(?:read_io|read_kb|read_timer|write_io)\b/,
+                  /\b(?:readInput|readKb|readTimer|writeOut)\b/,
                   "function",
                 ],
                 [/\b(?:let|if|else|true|false)\b/, "keyword"],
@@ -330,7 +330,7 @@
           });
           monaco.languages.setLanguageConfiguration("legScript", {
             comments: {
-              lineComment: "#",
+              lineComment: "//",
             },
           });
           monaco.languages.registerHoverProvider("legScript", {
@@ -338,10 +338,10 @@
               const word = model.getWordAtPosition(position);
               if (!word) return null;
               const functionSigs = new Map([
-                    ["read_io", "built-in function read_io()"],
-                ["read_kb", "built-in function read_kb()"],
-                ["read_timer", "built-in function read_timer()"],
-                ["write_io", "built-in function write_io(value)"],
+                    ["readInput", "built-in function readInput()"],
+                ["readKb", "built-in function readKb()"],
+                ["readTimer", "built-in function readTimer()"],
+                ["writeOut", "built-in function writeOut(value)"],
               ]);
               const builtinVars = new Set(["io", "kb", "timer", "fstack"]);
 
@@ -530,10 +530,10 @@
           line
             .replace(/\s+true\b/g, "1")
             .replace(/\s+false\b/g, "0")
-            .replace(/read_io\(\)/g, "io")
-            .replace(/read_kb\(\)/g, "kb")
-            .replace(/read_timer\(\)/g, "timer")
-            .replace(/write_io\(([^)]+)\)/g, "io = $1")
+            .replace(/readInput\(\)/g, "io")
+            .replace(/readKb\(\)/g, "kb")
+            .replace(/readTimer\(\)/g, "timer")
+            .replace(/writeOut\(([^)]+)\)/g, "io = $1")
         );
         return processed.join("\n");
       };
@@ -555,8 +555,8 @@
             continue;
           }
 
-          if (trimmed.startsWith("#")) {
-            nodes.push({ type: "comment", text: trimmed, line: i + 1 });
+          if (trimmed.startsWith("//")) {
+            nodes.push({ type: "comment", text: '#'+trimmed.slice(2), line: i + 1 });
             i += 1;
             continue;
           }
@@ -645,7 +645,7 @@
           "<<": "shl",
           ">>": "shr",
           "*": "mul",
-          "//": "div",
+          "/": "div",
           "%": "mod",
         };
         const tokenizeExpression = (text) => {
@@ -677,7 +677,7 @@
             }
             if (ch === "/") {
               if (text[i + 1] === "/") {
-                tokens.push({ type: "op", value: "//" });
+                tokens.push({ type: "op", value: "/" });
                 i += 2;
                 continue;
               }
@@ -758,7 +758,7 @@
             while (true) {
               const token = peek();
               if (!token || token.type !== "op") break;
-              if (token.value === "*" || token.value === "//" || token.value === "%") {
+              if (token.value === "*" || token.value === "/" || token.value === "%") {
                 consume();
                 node = { type: "binary", op: token.value, left: node, right: parseUnary() };
                 continue;
